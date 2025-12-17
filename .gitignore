@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Reference project (external repo)
+mimic-reference/
+
+# Environment files
+.env
+.env.local
+desktop/.env
+mobile/.env
+*/.env
+
+# Build outputs
+dist/
+build/
+.expo/
+
+# IDE
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Expo
+.expo-shared/
+
+# EAS
+.easignore
