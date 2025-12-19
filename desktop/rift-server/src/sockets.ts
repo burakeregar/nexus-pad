@@ -3,18 +3,16 @@ const require = createRequire(import.meta.url);
 const ws = require("ws");
 const WebSocketServer = ws.Server;
 const WebSocket = ws.WebSocket;
-const jwt = require("jsonwebtoken");
 import type { Server as WebSocketServerType, WebSocket as WebSocketType } from "ws";
 type VerifyClientCallbackAsync = (info: { origin: string; secure: boolean; req: any }, callback: (result: boolean, code?: number, message?: string) => void) => void;
 import * as url from "url";
-import * as db from "./database.js";
 import { v4 as uuidv4 } from "uuid";
 import { Socket } from "net";
 import { IncomingMessage } from "http";
 import { URL } from "url";
 import { RiftOpcode } from "./types.js";
 
-// Extend IncomingMessage to include userId from JWT verification
+// Extend IncomingMessage to include userId from query params
 declare module "http" {
     interface IncomingMessage {
         userId?: string;
@@ -33,6 +31,7 @@ interface MobileConnection {
 
 /**
  * Wrapper class that manages the two websocket servers for mobile and conduit clients.
+ * Simplified to use only Supabase userId for authentication.
  */
 export default class WebSocketManager {
     private mobileServer: WebSocketServerType;
@@ -109,38 +108,22 @@ export default class WebSocketManager {
     };
 
     /**
-     * Ensures that a Conduit client connecting to us has a valid JWT
-     * and a proper public key. Closes the connection if the request is invalid.
+     * Verifies that a Conduit client has a valid userId in the query params.
+     * No more JWT or public key validation - just check for userId.
      */
     private verifyConduitClient: VerifyClientCallbackAsync = async (info, cb) => {
         try {
-            if (!process.env.RIFT_JWT_SECRET) {
-                return cb(false, 500, "Server configuration error");
+            const url = new URL("https://foo.com" + info.req.url!);
+            const userId = url.searchParams.get("userId");
+
+            if (!userId) {
+                console.log("[-] Conduit connection rejected: missing userId");
+                return cb(false, 401, "Missing userId");
             }
 
-            // The URL constructor needs a full URL, but we only get a relative one.
-            // Since we don't care about anything but the query params anyway, we can use
-            // any URL here, since we won't read it back.
-            const url = new URL("https://foo.com" + info.req.url!);
-            
-            // Load token and pubkey from header (legacy) or URL query.
-            // If a token or pubkey is missing, abort.
-            const token = <string>info.req.headers.token || url.searchParams.get("token");
-            const pubkey = <string>info.req.headers["public-key"] || url.searchParams.get("publicKey");
-            if (!token || !pubkey) return cb(false, 401, "Unauthorized");
-
-            // Verify given JWT token.
-            const decoded = await new Promise<any>((resolve, reject) => {
-                jwt.verify(token, process.env.RIFT_JWT_SECRET!, (err: Error | null, dec: any) => {
-                    err ? reject(err) : resolve(dec)
-                });
-            });
-
-            const isValidUser = await db.potentiallyUpdate(decoded.userId, pubkey);
-            if (!isValidUser) return cb(false, 401, "Unauthorized");
-
-            // Everything is good, allow the connection.
-            info.req.userId = decoded.userId;
+            // Store userId on request for later use
+            info.req.userId = userId;
+            console.log("[+] Conduit client verified for user: " + userId);
             cb(true);
         } catch (e) {
             console.log("[-] Disconnected Conduit due to failed handshake: " + e);
@@ -149,9 +132,8 @@ export default class WebSocketManager {
     };
 
     /**
-     * Handles a new incoming connection to the conduit endpoint. Checks that the
-     * connection is not a dupe and registers it locally. This is only called after JWT
-     * validation, so we know that the userId is good.
+     * Handles a new incoming connection to the conduit endpoint.
+     * Just stores the connection by userId.
      */
     private handleConduitConnection = async (ws: WebSocketType, request: IncomingMessage) => {
         const userId = request.userId;
@@ -194,8 +176,6 @@ export default class WebSocketManager {
                 const [peer, message] = args;
                 const entry = this.conduitToMobileMap.get(ws)!.find(x => x.uuid === peer);
 
-                // Conduit may be lagging behind and still trying to reply to an already disconnected
-                // peer. Don't be too harsh and just ignore the message instead of immediately disconnecting.
                 if (!entry) {
                     console.log("[-] Conduit REPLY but peer not found:", peer);
                     return;
@@ -204,7 +184,6 @@ export default class WebSocketManager {
                 console.log("[+] Forwarding conduit reply to mobile:", peer);
                 entry.socket.send(JSON.stringify([RiftOpcode.RECEIVE, message]));
             } else {
-                // Just disconnect them.
                 throw new Error("Conduit sent invalid opcode.");
             }
         } catch (e: any) {
@@ -215,13 +194,11 @@ export default class WebSocketManager {
     };
 
     /**
-     * Handles a new incoming connection to the mobile endpoint. Only really hooks up
-     * event handlers.
+     * Handles a new incoming connection to the mobile endpoint.
      */
     private handleMobileConnection = async (ws: WebSocketType) => {
         console.log("[+] Got a new mobile connection.");
 
-        // If we were connected to a conduit instance, send it a message that we closed.
         ws.on("close", () => {
             if (!this.mobileToConduitMap.has(ws)) return;
 
@@ -247,6 +224,7 @@ export default class WebSocketManager {
 
     /**
      * Handles a message sent by a mobile peer to Rift.
+     * Simplified - no more public key exchange.
      */
     private handleMobileMessage = (ws: WebSocketType) => async (msg: Buffer) => {
         try {
@@ -257,15 +235,14 @@ export default class WebSocketManager {
                 if (this.mobileToConduitMap.has(ws)) return ws.close();
 
                 const [userId] = args;
-                const done = (result: string | null) => ws.send(JSON.stringify([RiftOpcode.CONNECT_PUBKEY, result]));
+                const done = (connected: boolean) => ws.send(JSON.stringify([RiftOpcode.CONNECT_RESULT, connected]));
 
-                // Look up public key by user ID, send null if it doesn't exist.
-                const pubkey = await db.lookup(userId);
-                if (!pubkey) return done(null);
-
-                // Look up the conduit connection, send null if conduit is not connected.
+                // Look up the conduit connection, send false if conduit is not connected.
                 const conduit = this.conduitConnections.get(userId);
-                if (!conduit) return done(null);
+                if (!conduit) {
+                    console.log("[-] Mobile tried to connect to offline user: " + userId);
+                    return done(false);
+                }
 
                 // Generate a random connection ID.
                 const connectionID = uuidv4();
@@ -277,11 +254,10 @@ export default class WebSocketManager {
                 this.mobileToConduitMap.set(ws, { socket: conduit, uuid: connectionID });
                 console.log("[+] Mobile connected to user " + userId + " as " + connectionID);
 
-                // Send the public key to client, inform conduit of new connection.
+                // Inform conduit of new connection, tell mobile it's connected
                 conduit.send(JSON.stringify([RiftOpcode.OPEN, connectionID]));
-                return done(pubkey.public_key);
+                return done(true);
             } else if (op === RiftOpcode.SEND) {
-                // Abort if not connected.
                 const peerDetails = this.mobileToConduitMap.get(ws);
                 if (!peerDetails) {
                     console.log("[-] Mobile SEND but not connected to conduit, closing");
@@ -290,7 +266,6 @@ export default class WebSocketManager {
 
                 peerDetails.socket.send(JSON.stringify([RiftOpcode.MSG, peerDetails.uuid, args[0]]));
             } else {
-                // Just disconnect them.
                 throw new Error("Mobile sent invalid opcode.");
             }
         } catch (e: any) {
@@ -300,4 +275,3 @@ export default class WebSocketManager {
         }
     };
 }
-

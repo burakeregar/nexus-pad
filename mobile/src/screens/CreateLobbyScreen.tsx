@@ -92,6 +92,22 @@ export default function CreateLobbyScreen({ onClose, onSuccess, onError, onLeave
     const [creating, setCreating] = useState(false);
     const [now, setNow] = useState(new Date());
     console.log("DEBUG - selectedSection:", selectedSection);
+    const [hasActiveLobby, setHasActiveLobby] = useState(false);
+
+    useEffect(() => {
+        // Check if we are already in a lobby to change the back button text
+        const checkLobby = async () => {
+            if (!lcuBridge.getIsConnected()) return;
+            try {
+                const res = await lcuBridge.request('/lol-lobby/v2/lobby');
+                if (res.status === 200 && res.content) {
+                    setHasActiveLobby(true);
+                }
+            } catch { /* ignore */ }
+        };
+        checkLobby();
+    }, []);
+
     useEffect(() => {
         const t = setInterval(() => setNow(new Date()), 1000);
         return () => clearInterval(t);
@@ -234,7 +250,7 @@ export default function CreateLobbyScreen({ onClose, onSuccess, onError, onLeave
             let aramShamataKept = false;
             let firstAramSource: GameQueue | null = null;
 
-            sectionQueues.forEach(q => {
+            for (const q of sectionQueues) {
                 const mapId = Number(q.mapId);
                 const gm = (q.gameMode || '').toUpperCase();
                 if (mapId === 12 && !firstAramSource) firstAramSource = q;
@@ -242,25 +258,25 @@ export default function CreateLobbyScreen({ onClose, onSuccess, onError, onLeave
                 // Special-case ARAM: keep max one ARAM and one Shamata (KIWI)
                 if (mapId === 12) {
                     if (gm === 'ARAM') {
-                        if (aramClassicKept) return;
+                        if (aramClassicKept) continue;
                         aramClassicKept = true;
                         unique.push(q);
-                        return;
+                        continue;
                     }
                     const isShamata = isShamataQueue(q);
                     if (isShamata) {
-                        if (aramShamataKept) return;
+                        if (aramShamataKept) continue;
                         aramShamataKept = true;
                         unique.push(q);
-                        return;
+                        continue;
                     }
                 }
 
                 const sig = `${(q.description || q.shortName || q.name || q.id || '').toString().toLowerCase()}`;
-                if (seen.has(sig)) return;
+                if (seen.has(sig)) continue;
                 seen.add(sig);
                 unique.push(q);
-            });
+            }
 
             if (firstAramSource && !aramClassicKept && Number(firstAramSource.mapId) === 12) {
                 unique.unshift({
@@ -487,7 +503,7 @@ export default function CreateLobbyScreen({ onClose, onSuccess, onError, onLeave
                 <View style={styles.topBar}>
                     <TouchableOpacity onPress={onClose} style={styles.backRow} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Text style={styles.backIcon}>{'\u2039'}</Text>
-                        <Text style={styles.backText}>Create Lobby</Text>
+                        <Text style={styles.backText}>{hasActiveLobby ? 'Lobby' : 'Home'}</Text>
                     </TouchableOpacity>
                 </View>
 

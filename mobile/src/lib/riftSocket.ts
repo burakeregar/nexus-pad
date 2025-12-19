@@ -25,7 +25,7 @@ export type RiftSocketStateValue = typeof RiftSocketState[keyof typeof RiftSocke
 
 const RiftOpcode = {
   CONNECT: 4,
-  CONNECT_PUBKEY: 5,
+  CONNECT_RESULT: 5, // Rift sends true/false (was CONNECT_PUBKEY)
   SEND: 6,
   RECEIVE: 8
 } as const;
@@ -152,17 +152,29 @@ export default class RiftSocket {
     try {
       const [op, ...data] = JSON.parse(msg.data);
 
-      if (op === RiftOpcode.CONNECT_PUBKEY) {
-        const pubkey = data[0];
+      if (op === RiftOpcode.CONNECT_RESULT) {
+        const connected = data[0];
 
-        if (!pubkey) {
+        if (!connected) {
           this.state = RiftSocketState.FAILED_NO_DESKTOP;
           return;
         }
 
+        // Desktop is online, wait for desktop to send public key
         this.state = RiftSocketState.HANDSHAKING;
-        await this.sendIdentity(pubkey);
+        console.log('[RiftSocket] Connected to desktop, waiting for public key...');
       } else if (op === RiftOpcode.RECEIVE) {
+        // Check if this is the public key message from desktop
+        if (this.state === RiftSocketState.HANDSHAKING && !this.encrypted) {
+          // First message during handshake is the public key from desktop
+          const message = data[0];
+          if (Array.isArray(message) && message[0] === 'PUBKEY') {
+            const pubkey = message[1];
+            console.log('[RiftSocket] Received public key from desktop');
+            await this.sendIdentity(pubkey);
+            return;
+          }
+        }
         await this.handleMobileMessage(data[0]);
       }
     } catch (error) {

@@ -1,9 +1,3 @@
-declare module "http" {
-    interface IncomingMessage {
-        code?: string;
-    }
-}
-
 /**
  * Represents an opcode sent/received by Rift. These are the first element
  * of arrays.
@@ -18,13 +12,13 @@ export const enum RiftOpcode {
     // A previous mobile <-> conduit connection was closed.
     CLOSE = 3,
 
-    // Request Rift for pubkey.
+    // Mobile requests to connect to a specific userId.
     CONNECT = 4,
 
-    // Rift either sends public key or null.
-    CONNECT_PUBKEY = 5,
+    // Rift sends connection result (true/false).
+    CONNECT_RESULT = 5,
 
-    // Mobile sends a connection to the connected Conduit instance.
+    // Mobile sends a message to the connected Conduit instance.
     SEND = 6,
 
     // Send a message from Conduit to the specified mobile peer.
@@ -33,4 +27,3 @@ export const enum RiftOpcode {
     // Mobile receives a message from the connected Conduit instance.
     RECEIVE = 8
 }
-

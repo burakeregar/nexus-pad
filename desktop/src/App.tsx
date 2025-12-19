@@ -30,13 +30,13 @@ function App() {
   const [pendingConnection, setPendingConnection] = useState<{ device: string; browser: string; identity: string } | null>(null)
   const [pendingConnectionIdentity, setPendingConnectionIdentity] = useState<string | null>(null)
   const [pendingConnectionResolve, setPendingConnectionResolve] = useState<((approved: boolean) => void) | null>(null)
-  
+
   // Queue data state - fetched when LCU is connected, available for use in components
   const [queues, setQueues] = useState<GameQueue[]>([])
   const [enabledGameQueues, setEnabledGameQueues] = useState<number[]>([])
   const [defaultGameQueues, setDefaultGameQueues] = useState<number[]>([])
   const [queuesLoading, setQueuesLoading] = useState(false)
-  
+
   console.log("DEBUG - queues:", queues?.filter(q => q.queueAvailability === 'Available'))
   // Custom modal state
   const [modalVisible, setModalVisible] = useState(false)
@@ -58,7 +58,7 @@ function App() {
       title,
       message,
       type: type || 'info',
-      buttons: buttons || [{ text: 'OK', onClick: () => {}, variant: 'primary' }]
+      buttons: buttons || [{ text: 'OK', onClick: () => { }, variant: 'primary' }]
     })
     setModalVisible(true)
   }, [])
@@ -88,13 +88,13 @@ function App() {
 
     const messageListener = (windowId: any, _messageId: any, message: any) => {
       let messageContent: string | null = null;
-      
+
       if (typeof message === 'string') {
         messageContent = message;
       } else if (windowId && typeof windowId === 'object' && typeof windowId.content === 'string') {
         messageContent = windowId.content;
       }
-      
+
       if (messageContent) {
         try {
           const data = JSON.parse(messageContent);
@@ -137,21 +137,21 @@ function App() {
       try {
         setQueuesLoading(true)
         console.log('[App] LCU connected, fetching queues...')
-        
+
         const [queuesData, enabledData, defaultData] = await Promise.all([
           getGameQueues(),
           getEnabledGameQueues(),
           getDefaultGameQueues()
         ])
-        
+
         const safeQueues = Array.isArray(queuesData) ? queuesData : []
         const safeEnabled = Array.isArray(enabledData) ? enabledData : []
         const safeDefault = Array.isArray(defaultData) ? defaultData : []
-        
+
         setQueues(safeQueues)
         setEnabledGameQueues(safeEnabled)
         setDefaultGameQueues(safeDefault)
-        
+
         console.log('[App] Queues fetched successfully:', {
           queues: safeQueues.length,
           enabled: safeEnabled.length,
@@ -188,15 +188,15 @@ function App() {
     }
 
     setIsConnecting(true)
-    
+
     try {
       const bridge = getBridgeManager()
-      
+
       // Set up status change callback
       bridge.setStatusChangeCallback((status) => {
         setConnectionStatus(status)
       })
-      
+
       // Set up connection request callback BEFORE initializing
       bridge.setConnectionRequestCallback(async (deviceInfo) => {
         return new Promise<boolean>((resolve) => {
@@ -212,11 +212,9 @@ function App() {
       // Use import.meta.env for Vite, fallback to hardcoded values
       // Use 127.0.0.1 instead of localhost for Overwolf compatibility
       const riftUrl = (import.meta.env?.VITE_RIFT_URL as string) || 'http://127.0.0.1:51001'
-      const jwtSecret = (import.meta.env?.VITE_RIFT_JWT_SECRET as string) || 'dev-secret-key-change-in-production'
-      
+
       await bridge.initialize({
         riftUrl,
-        jwtSecret,
         userId: session.user.id
       })
 
@@ -252,7 +250,7 @@ function App() {
         <div className="flex justify-between items-center bg-neutral-900/80 backdrop-blur-md px-4 py-3 border-b border-neutral-800 cursor-grab active:cursor-grabbing select-none z-50" onMouseDown={handleDragMove}>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
-            <div className="font-bold text-sm tracking-wide text-neutral-200">AUTO CHAMP SELECT</div>
+            <div className="font-bold text-sm tracking-wide text-neutral-200">NEXUS PAD</div>
           </div>
           <button className="text-neutral-500 hover:text-white hover:bg-red-500/20 hover:border-red-500/50 border border-transparent rounded-md px-2 py-1 transition-all duration-200" onClick={handleClose}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -275,7 +273,7 @@ function App() {
           if (pendingConnectionResolve) {
             pendingConnectionResolve(true)
           }
-          
+
           // Also send message to background for logging
           overwolf.windows.obtainDeclaredWindow('background', (result: any) => {
             if (result.success && pendingConnectionIdentity) {
@@ -283,10 +281,10 @@ function App() {
                 type: 'connection_response',
                 deviceIdentity: pendingConnectionIdentity,
                 approved: true
-              }), () => {});
+              }), () => { });
             }
           });
-          
+
           setPendingConnection(null)
           setPendingConnectionIdentity(null)
           setPendingConnectionResolve(null)
@@ -296,7 +294,7 @@ function App() {
           if (pendingConnectionResolve) {
             pendingConnectionResolve(false)
           }
-          
+
           // Also send message to background for logging
           overwolf.windows.obtainDeclaredWindow('background', (result: any) => {
             if (result.success && pendingConnectionIdentity) {
@@ -304,10 +302,10 @@ function App() {
                 type: 'connection_response',
                 deviceIdentity: pendingConnectionIdentity,
                 approved: false
-              }), () => {});
+              }), () => { });
             }
           });
-          
+
           setPendingConnection(null)
           setPendingConnectionIdentity(null)
           setPendingConnectionResolve(null)
@@ -318,7 +316,7 @@ function App() {
       <div className="flex justify-between items-center bg-neutral-900/80 backdrop-blur-md px-4 py-3 border-b border-neutral-800 cursor-grab active:cursor-grabbing select-none z-50" onMouseDown={handleDragMove}>
         <div className="flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] ${isConnected ? 'bg-green-500 shadow-green-500/50' : 'bg-red-500 shadow-red-500/50'}`}></div>
-          <div className="font-bold text-sm tracking-wide text-neutral-200">AUTO CHAMP SELECT</div>
+          <div className="font-bold text-sm tracking-wide text-neutral-200">NEXUS PAD</div>
         </div>
         <button className="text-neutral-500 hover:text-white hover:bg-red-500/20 hover:border-red-500/50 border border-transparent rounded-md px-2 py-1 transition-all duration-200" onClick={handleClose}>
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>

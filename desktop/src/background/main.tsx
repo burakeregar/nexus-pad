@@ -409,7 +409,7 @@ const Background = () => {
   }, []);
 
   useEffect(() => {
-    console.log("Auto Champ Select Background Window Loaded");
+    console.log("Nexus Pad Background Window Loaded");
 
     // Open Desktop Window
     overwolf.windows.obtainDeclaredWindow("desktop", (result: any) => {

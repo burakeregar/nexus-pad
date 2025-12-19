@@ -1422,7 +1422,7 @@ export default function HomeScreen({ session }: { session: Session }) {
             return (
                 <View style={styles.container}>
                     <View style={styles.header}>
-                        <Text style={styles.title}>Auto Champ Select</Text>
+                        <Text style={styles.title}>Nexus Pad</Text>
                     </View>
 
                     <ConnectionStatus

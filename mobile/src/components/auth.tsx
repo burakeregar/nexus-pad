@@ -81,7 +81,7 @@ export default function Auth() {
             keyboardShouldPersistTaps="handled"
         >
             <View style={styles.content}>
-                <Text style={styles.title}>Auto Champ Select</Text>
+                <Text style={styles.title}>Nexus Pad</Text>
                 <Text style={styles.subtitle}>Sign in to connect with your mobile app.</Text>
 
                 <View style={styles.form}>

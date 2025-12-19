@@ -9,6 +9,8 @@ import {
     ScrollView,
     Image,
     ActivityIndicator,
+    Platform,
+    StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -56,6 +58,7 @@ export default function SettingsPanel({
     favoriteConfig,
     onSaveFavoriteConfig,
 }: SettingsPanelProps) {
+    const topPadding = Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0);
     const [editingConfig, setEditingConfig] = useState<FavoriteChampionConfig>(favoriteConfig);
     const [allChampions, setAllChampions] = useState<any[]>([]);
     const [ownedChampionIds, setOwnedChampionIds] = useState<Set<number>>(new Set());
@@ -220,10 +223,10 @@ export default function SettingsPanel({
 
     return (
         <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-            <SafeAreaView style={styles.modalContainer} edges={['top', 'left', 'right', 'bottom']}>
+            <View style={styles.modalContainer}>
                 <View style={styles.container}>
                     {/* Header */}
-                    <View style={styles.header}>
+                    <View style={[styles.header, { paddingTop: topPadding }]}>
                         <Text style={styles.headerTitle}>⚙️ Settings</Text>
                         <TouchableOpacity
                             onPress={onClose}
@@ -330,7 +333,7 @@ export default function SettingsPanel({
                         </View>
                     </ScrollView>
                 </View>
-            </SafeAreaView>
+            </View>
 
             {/* Champion Picker Modal */}
             <Modal
@@ -340,7 +343,7 @@ export default function SettingsPanel({
                 onRequestClose={() => setShowChampionPicker(false)}
             >
                 <View style={styles.pickerOverlay}>
-                    <View style={styles.pickerContainer}>
+                    <SafeAreaView style={styles.pickerContainer} edges={['top', 'left', 'right', 'bottom']}>
                         <View style={styles.pickerHeader}>
                             <Text style={styles.pickerTitle}>
                                 {pickerMode === 'lane' && activeLane
@@ -369,7 +372,7 @@ export default function SettingsPanel({
                                 contentContainerStyle={{ paddingHorizontal: 16 }}
                             />
                         )}
-                    </View>
+                    </SafeAreaView>
                 </View>
             </Modal>
         </Modal>
@@ -530,7 +533,6 @@ const styles = StyleSheet.create({
     pickerContainer: {
         flex: 1,
         backgroundColor: DARK_BG,
-        marginTop: 60,
         borderTopLeftRadius: 16,
         borderTopRightRadius: 16,
     },

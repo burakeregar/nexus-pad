@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Main bridge coordinator (LCU ↔ Rift ↔ Mobile)
+ * Simplified: Uses only Supabase userId for authentication
  */
 
 import { RiftClient, type RiftClientCallbacks } from './riftClient';
@@ -11,8 +12,7 @@ import { watchLcuConnection } from '../lib/lcuConnection';
 
 export interface BridgeConfig {
   riftUrl: string;
-  jwtSecret: string;
-  userId: string; // Supabase user ID
+  userId: string; // Supabase user ID - this is all we need now
 }
 
 export interface ConnectionRequestCallback {
@@ -30,7 +30,6 @@ export interface StatusChangeCallback {
 export class BridgeManager {
   private riftClient: RiftClient | null = null;
   private mobileHandlers: Map<string, MobileHandler> = new Map();
-  private token: string | null = null;
   private config: BridgeConfig | null = null;
   private lcuClient: LcuClient = getLcuClient();
   private connectionRequestCallback: ConnectionRequestCallback | null = null;
@@ -38,7 +37,7 @@ export class BridgeManager {
   private stopLcuWatching: (() => void) | null = null;
   private lcuConnected: boolean = false;
   private riftConnected: boolean = false;
-  private lastFailedLcuPort: number | null = null; // Prevent repeated failed attempts
+  private lastFailedLcuPort: number | null = null;
 
   /**
    * Sets the connection request callback
@@ -71,12 +70,10 @@ export class BridgeManager {
   private notifyStatusChange(): void {
     const status = this.getStatus();
 
-    // Notify UI callback
     if (this.statusChangeCallback) {
       this.statusChangeCallback(status);
     }
 
-    // Broadcast to all connected mobile devices
     this.broadcastStatusToMobile();
   }
 
@@ -102,10 +99,9 @@ export class BridgeManager {
   }
 
   /**
-   * Initializes the bridge with Rift server configuration
+   * Initializes the bridge - simplified, no registration needed
    */
   async initialize(config: BridgeConfig): Promise<void> {
-    // Prevent re-initialization if already connected
     if (this.riftClient?.isConnected()) {
       console.log('[BridgeManager] Already connected, skipping initialization');
       return;
@@ -116,8 +112,8 @@ export class BridgeManager {
     // Start watching for LCU connection
     this.startLcuWatching();
 
-    // Register with Rift server to get JWT token
-    await this.registerWithRift();
+    // Directly connect to Rift server (no registration needed now)
+    await this.connectToRift();
   }
 
   /**
@@ -125,28 +121,25 @@ export class BridgeManager {
    */
   private startLcuWatching(): void {
     if (this.stopLcuWatching) {
-      return; // Already watching
+      return;
     }
 
     console.log('[BridgeManager] Starting LCU connection watch...');
 
     this.stopLcuWatching = watchLcuConnection(
       async (lcuConfig) => {
-        // Skip if we already failed on this port (stale lockfile)
         if (this.lastFailedLcuPort === lcuConfig.port) {
           return;
         }
 
         console.log('[BridgeManager] LCU lockfile found on port:', lcuConfig.port);
         try {
-          // connect() now includes verification - throws if LCU isn't actually running
           await this.lcuClient.connect(lcuConfig);
           this.lcuConnected = true;
-          this.lastFailedLcuPort = null; // Reset on success
+          this.lastFailedLcuPort = null;
           console.log('[BridgeManager] LCU client verified and connected');
           this.notifyStatusChange();
         } catch (error) {
-          // Connection or verification failed - stale lockfile or client closed
           console.log('[BridgeManager] LCU connection failed (stale lockfile?):', error);
           this.lcuConnected = false;
           this.lastFailedLcuPort = lcuConfig.port;
@@ -157,11 +150,11 @@ export class BridgeManager {
       () => {
         console.log('[BridgeManager] LCU disconnected (lockfile removed)');
         this.lcuConnected = false;
-        this.lastFailedLcuPort = null; // Reset when lockfile is removed
+        this.lastFailedLcuPort = null;
         this.lcuClient.disconnect();
         this.notifyStatusChange();
       },
-      3000 // Check every 3 seconds
+      3000
     );
   }
 
@@ -173,84 +166,11 @@ export class BridgeManager {
   }
 
   /**
-   * Registers with Rift server and gets JWT token
-   * Uses XMLHttpRequest instead of fetch for better Overwolf compatibility
-   */
-  private async registerWithRift(): Promise<void> {
-    if (!this.config) {
-      throw new Error('Bridge not initialized');
-    }
-
-    try {
-      const { exportPublicKey } = await import('./crypto');
-      const publicKey = await exportPublicKey();
-
-      // Use XMLHttpRequest instead of fetch for Overwolf compatibility
-      // Replace localhost with 127.0.0.1 for Overwolf compatibility
-      const riftUrl = this.config!.riftUrl.replace('localhost', '127.0.0.1');
-      console.log('[BridgeManager] Registering with Rift at:', riftUrl, 'for user:', this.config.userId);
-
-      const data = await new Promise<any>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${riftUrl}/register`, true);
-        xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.setRequestHeader('Accept', 'application/json');
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (error) {
-              console.error('[BridgeManager] Failed to parse response:', error);
-              reject(new Error('Failed to parse response: ' + xhr.responseText.substring(0, 100)));
-            }
-          } else {
-            reject(new Error(`Registration failed: ${xhr.statusText} (${xhr.status}) - ${xhr.responseText.substring(0, 100)}`));
-          }
-        };
-
-        xhr.onerror = (event) => {
-          console.error('[BridgeManager] XHR error event:', event);
-          reject(new Error(`Network error: Failed to connect to Rift server at ${riftUrl}. Make sure the Rift server is running.`));
-        };
-
-        xhr.ontimeout = () => {
-          reject(new Error('Request timeout: Rift server did not respond within 10 seconds'));
-        };
-
-        xhr.timeout = 10000; // 10 second timeout
-        try {
-          // Send userId along with pubkey
-          xhr.send(JSON.stringify({ pubkey: publicKey, userId: this.config!.userId }));
-        } catch (error: any) {
-          console.error('[BridgeManager] Error sending XHR:', error);
-          reject(new Error('Failed to send request: ' + error.message));
-        }
-      });
-
-      if (!data.ok || !data.token) {
-        throw new Error('Invalid registration response');
-      }
-
-      this.token = data.token;
-      console.log('[BridgeManager] Registered with Rift successfully');
-
-      // Connect to Rift WebSocket
-      await this.connectToRift();
-    } catch (error) {
-      console.error('[BridgeManager] Failed to register with Rift:', error);
-      throw error;
-    }
-  }
-
-
-  /**
-   * Connects to Rift WebSocket server
+   * Connects to Rift WebSocket server - simplified, uses only userId
    */
   private async connectToRift(): Promise<void> {
-    if (!this.config || !this.token) {
-      throw new Error('Bridge not initialized or no token');
+    if (!this.config) {
+      throw new Error('Bridge not initialized');
     }
 
     // Disconnect existing client before creating new one
@@ -270,12 +190,20 @@ export class BridgeManager {
         console.log('[BridgeManager] Disconnected from Rift server');
         this.riftConnected = false;
         this.notifyStatusChange();
-        // RiftClient already handles reconnection, don't duplicate it here
       },
-      onNewConnection: (uuid: string) => {
+      onNewConnection: async (uuid: string) => {
         console.log('[BridgeManager] New mobile connection:', uuid);
         this.createMobileHandler(uuid);
-        // Status change will be notified after SECRET handshake completes
+
+        // Send public key to mobile as first message
+        try {
+          const { exportPublicKey } = await import('./crypto');
+          const publicKey = await exportPublicKey();
+          console.log('[BridgeManager] Sending public key to mobile:', uuid);
+          this.riftClient?.sendToMobile(uuid, ['PUBKEY', publicKey]);
+        } catch (error) {
+          console.error('[BridgeManager] Failed to send public key:', error);
+        }
       },
       onConnectionClosed: (uuid: string) => {
         console.log('[BridgeManager] Mobile connection closed:', uuid);
@@ -287,12 +215,14 @@ export class BridgeManager {
       }
     };
 
+    // Use userId directly instead of JWT token
     this.riftClient = new RiftClient(
-      this.config.riftUrl.replace('http://', 'ws://').replace('https://', 'wss://'),
-      this.token,
+      this.config.riftUrl.replace('http://', 'ws://').replace('https://', 'wss://').replace('localhost', '127.0.0.1'),
+      this.config.userId,
       callbacks
     );
 
+    console.log('[BridgeManager] Connecting to Rift with userId:', this.config.userId);
     await this.riftClient.connect();
   }
 
@@ -311,29 +241,23 @@ export class BridgeManager {
         }
       },
       onConnectionRequest: async (deviceInfo: { device: string; browser: string; identity: string }) => {
-        // Auto-approve mobile connections when desktop is running—no user prompt required.
         console.log('[BridgeManager] Auto-approving mobile connection:', deviceInfo);
 
-        // Log that we are ignoring the callback to satisfy linter (unused variable)
         if (this.connectionRequestCallback) {
           console.log('[BridgeManager] Ignoring connectionRequestCallback (auto-approve enabled)');
         }
 
-        // Small delay to ensure handler is set up before broadcasting status
         setTimeout(() => this.notifyStatusChange(), 100);
         return true;
       },
       onStatusRequest: () => {
-        // Return current status when mobile requests it
         return this.getStatus();
       },
       onConnectionApproved: () => {
-        // Connection is now fully established (after handshake complete)
         console.log('[BridgeManager] Mobile connection fully established');
         this.notifyStatusChange();
       },
       onSubscribe: (path: string) => {
-        // Subscribe to LCU endpoint
         const unsubscribe = this.lcuClient.observe(path, (event) => {
           const handler = this.mobileHandlers.get(uuid);
           if (handler && handler.matchesObservedPath(path)) {
@@ -350,7 +274,6 @@ export class BridgeManager {
           }
         });
 
-        // Store unsubscribe function
         const handler = this.mobileHandlers.get(uuid);
         if (handler) {
           (handler as any).lcuObservers = (handler as any).lcuObservers || new Map();
@@ -358,7 +281,6 @@ export class BridgeManager {
         }
       },
       onUnsubscribe: (path: string) => {
-        // Unsubscribe from LCU endpoint
         const handler = this.mobileHandlers.get(uuid);
         if (handler && (handler as any).lcuObservers) {
           const unsubscribe = (handler as any).lcuObservers.get(path);
@@ -395,28 +317,23 @@ export class BridgeManager {
       return;
     }
 
-    // Handle message (may need decryption) - async handling
     handler.handleMessage(message).then(result => {
       console.log('[BridgeManager] handleMessage result:', result ? 'got result' : 'null');
       if (!result) {
-        // Message was handled internally, no response needed
         return;
       }
 
-      // Check if this is a SECRET_RESPONSE (needs to be sent unencrypted)
       try {
         const parsed = JSON.parse(result);
         if (Array.isArray(parsed) && parsed[0] === MobileOpcode.SECRET_RESPONSE) {
-          // Send SECRET_RESPONSE directly without encryption
           console.log('[BridgeManager] Sending SECRET_RESPONSE to mobile:', parsed[1]);
           this.riftClient?.sendToMobile(uuid, parsed);
           return;
         }
       } catch {
-        // Not a JSON response, treat as decrypted message
+        // Not a JSON response
       }
 
-      // Handle decrypted message
       console.log('[BridgeManager] Calling handleDecryptedMessage with result length:', result.length);
       handler.handleDecryptedMessage(result).then(async response => {
         console.log('[BridgeManager] handleDecryptedMessage response:', response ? 'got response' : 'null');
@@ -438,19 +355,16 @@ export class BridgeManager {
    * Disconnects from Rift
    */
   disconnect(): void {
-    // Stop LCU watching
     if (this.stopLcuWatching) {
       this.stopLcuWatching();
       this.stopLcuWatching = null;
     }
 
-    // Disconnect LCU client
     if (this.lcuClient) {
       this.lcuClient.disconnect();
       this.lcuConnected = false;
     }
 
-    // Disconnect Rift client
     if (this.riftClient) {
       this.riftClient.disconnect();
       this.riftClient = null;

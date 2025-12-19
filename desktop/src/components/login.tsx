@@ -61,7 +61,7 @@ export default function Login() {
                 onClose={closeModal}
             />
 
-            <h2 className="text-3xl font-bold mb-2 text-white">Auto Champ Select</h2>
+            <h2 className="text-3xl font-bold mb-2 text-white">Nexus Pad</h2>
             <p className="text-neutral-400 mb-8 text-center">Sign in to connect with your mobile app.</p>
 
             <form onSubmit={handleLogin} className="w-full max-w-xs flex flex-col gap-4">

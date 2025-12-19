@@ -1,6 +1,7 @@
 import 'react-native-get-random-values'; // Must be imported first for crypto polyfill
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { StyleSheet, View, SafeAreaView, Platform, StatusBar, AppState, AppStateStatus, Text, TextInput } from 'react-native'
+import { StyleSheet, View, Platform, StatusBar, AppState, AppStateStatus, Text, TextInput } from 'react-native'
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { supabase, isSupabaseConfigured } from './src/lib/supabase'
 import Auth from './src/components/auth'
 import HomeScreen from './src/screens/home-screen'
@@ -142,13 +143,13 @@ export default function App() {
       <View style={styles.container} onLayout={onLayoutRootView}>
         <StatusBar barStyle="light-content" />
         {activeInvite && (
-          <SafeAreaView style={styles.toastContainer} pointerEvents="box-none">
+          <View style={styles.toastContainer} pointerEvents="box-none">
             <InviteToast
               invite={activeInvite}
               onAccept={acceptInvite}
               onDecline={declineInvite}
             />
-          </SafeAreaView>
+          </View>
         )}
         {session && session.user ? <HomeScreen session={session} /> : <Auth />}
       </View>

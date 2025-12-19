@@ -1,9 +1,9 @@
 /**
  * WebSocket client for connecting to Rift server
+ * Simplified: Uses only userId for authentication (no JWT/publicKey)
  */
 
 import { RiftOpcode } from './types';
-import { exportPublicKey } from './crypto';
 
 export interface RiftClientCallbacks {
   onOpen: () => void;
@@ -15,23 +15,21 @@ export interface RiftClientCallbacks {
 
 export class RiftClient {
   private ws: WebSocket | null = null;
-  private token: string | null = null;
+  private userId: string;
   private riftUrl: string;
   private callbacks: RiftClientCallbacks;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isConnecting = false;
-  private publicKeyPromise: Promise<string>;
   private intentionalDisconnect = false;
 
-  constructor(riftUrl: string, token: string, callbacks: RiftClientCallbacks) {
+  constructor(riftUrl: string, userId: string, callbacks: RiftClientCallbacks) {
     this.riftUrl = riftUrl;
-    this.token = token;
-    this.publicKeyPromise = exportPublicKey();
+    this.userId = userId;
     this.callbacks = callbacks;
   }
 
   /**
-   * Connects to Rift server
+   * Connects to Rift server using just the userId
    */
   async connect(): Promise<void> {
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
@@ -42,10 +40,10 @@ export class RiftClient {
     this.intentionalDisconnect = false;
 
     try {
-      const publicKey = await this.publicKeyPromise;
-      const url = `${this.riftUrl}/conduit?token=${encodeURIComponent(this.token!)}&publicKey=${encodeURIComponent(publicKey)}`;
-      console.log('[RiftClient] Connecting to:', url.replace(this.token!, '***'));
-      
+      // Simplified: just userId in the query params
+      const url = `${this.riftUrl}/conduit?userId=${encodeURIComponent(this.userId)}`;
+      console.log('[RiftClient] Connecting to:', url);
+
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
@@ -57,7 +55,7 @@ export class RiftClient {
       this.ws.onmessage = (event) => {
         try {
           const [op, ...args] = JSON.parse(event.data);
-          
+
           if (op === RiftOpcode.OPEN) {
             const uuid = args[0];
             console.log('[RiftClient] New mobile connection:', uuid);
@@ -85,7 +83,7 @@ export class RiftClient {
         this.ws = null;
         this.isConnecting = false;
         this.callbacks.onClose();
-        
+
         // Only attempt to reconnect if this wasn't an intentional disconnect
         if (!this.intentionalDisconnect) {
           if (this.reconnectTimer) {
@@ -123,7 +121,7 @@ export class RiftClient {
    */
   disconnect(): void {
     this.intentionalDisconnect = true;
-    
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -141,12 +139,4 @@ export class RiftClient {
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
-
-  /**
-   * Updates the JWT token
-   */
-  setToken(token: string): void {
-    this.token = token;
-  }
 }
-
